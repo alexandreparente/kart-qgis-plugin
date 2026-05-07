@@ -28,13 +28,17 @@ from qgis.PyQt.QtWidgets import (
     QInputDialog,
     QMenu,
     QMessageBox,
+    QSplitter,
+    QToolBar,
     QTreeWidgetItem,
+    QVBoxLayout,
 )
 from qgis.utils import iface
 
 from kart.core import RepoManager
 from kart.gui import icons
 from kart.gui.clonedialog import CloneDialog
+from kart.gui.commitwidget import KartCommitPanel
 from kart.gui.conflictsdialog import ConflictsDialog
 from kart.gui.dbconnectiondialog import DbConnectionDialog
 from kart.gui.diffviewer import DiffViewerDialog
@@ -73,6 +77,32 @@ class KartDockWidget(QgsDockWidget, WIDGET):
         self.setupUi(self)
 
         self.retranslateUi()
+
+        if hasattr(self, "label_2"):
+            self.label_2.hide()
+
+        if self.dockWidgetContents.layout() is not None:
+            self.mainLayout = self.dockWidgetContents.layout()
+        else:
+            self.mainLayout = QVBoxLayout(self.dockWidgetContents)
+            self.mainLayout.setContentsMargins(0, 0, 0, 0)
+            self.mainLayout.setSpacing(0)
+
+        # 1. Toolbar
+        self.toolbar = QToolBar()
+        self.mainLayout.addWidget(self.toolbar)
+        self.setupToolbar()
+
+        # 2. Splitter
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.mainLayout.addWidget(self.splitter)
+
+        self.splitter.addWidget(self.tree)
+
+        # 3. Commit
+        self.commitPanel = KartCommitPanel(self)
+        self.splitter.addWidget(self.commitPanel)
+        self.commitPanel.hide()
 
         self.tree.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -116,7 +146,46 @@ class KartDockWidget(QgsDockWidget, WIDGET):
         self.tree.mimeTypes = mimeTypes
         self.tree.dropMimeData = dropMimeData
 
+        self.tree.currentItemChanged.connect(self.refreshPendingChanges)
         self.fillTree()
+
+    def setupToolbar(self):
+        self.actionAdd = QAction(icons.addRepoIcon, tr("Add existing repository..."), self)
+        self.actionAdd.triggered.connect(lambda: self.reposItem.addRepo())
+
+        self.actionCreate = QAction(icons.createRepoIcon, tr("Create new repository..."), self)
+        self.actionCreate.triggered.connect(lambda: self.reposItem.createRepo())
+
+        self.actionClone = QAction(icons.cloneRepoIcon, tr("Clone repository..."), self)
+        self.actionClone.triggered.connect(lambda: self.reposItem.cloneRepo())
+
+        self.actionRefresh = QAction(icons.refreshIcon, tr("Refresh"), self)
+        self.actionRefresh.triggered.connect(self.fillTree)
+
+        self.actionCommitToggle = QAction(icons.commitIcon, tr("Commit Changes"), self)
+        self.actionCommitToggle.setCheckable(True)
+        self.actionCommitToggle.triggered.connect(self.toggleCommitPanel)
+
+        self.toolbar.addActions([self.actionAdd, self.actionCreate, self.actionClone])
+        self.toolbar.addSeparator()
+        self.toolbar.addActions([self.actionRefresh, self.actionCommitToggle])
+
+    def toggleCommitPanel(self, checked):
+        self.commitPanel.setVisible(checked)
+        if checked:
+            self.splitter.setSizes([self.height() // 2, self.height() // 2])
+            self.refreshPendingChanges()
+
+    def refreshPendingChanges(self):
+        item = self.tree.currentItem()
+        repo = None
+        curr = item
+        while curr:
+            if hasattr(curr, "repo"):
+                repo = curr.repo
+                break
+            curr = curr.parent()
+        self.commitPanel.setRepository(repo)
 
     def fillTree(self):
         self.tree.clear()
@@ -131,6 +200,9 @@ class KartDockWidget(QgsDockWidget, WIDGET):
                     item.populate()
                     item.setExpanded(True)
                     item.datasetsItem.setExpanded(True)
+
+        if hasattr(self, "commitPanel") and self.commitPanel.isVisible():
+            self.refreshPendingChanges()
 
     def showPopupMenu(self, point):
         item = self.tree.currentItem()
@@ -162,7 +234,6 @@ class KartDockWidget(QgsDockWidget, WIDGET):
         super().retranslateUi(self)
 
         self.setWindowTitle(tr("Kart repositories"))
-        self.label_2.setText(tr("Tip: right-click on items for available actions"))
 
 
 class RefreshableItem(QTreeWidgetItem):
