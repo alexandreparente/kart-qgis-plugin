@@ -2,6 +2,7 @@ import os
 
 from qgis.gui import QgsMessageBar
 from qgis.PyQt import uic
+from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QSizePolicy
 from qgis.utils import iface
 
@@ -39,20 +40,87 @@ class SettingsDialog(BASE, WIDGET):
         self.buttonBox.accepted.connect(self.okClicked)
         self.buttonBox.rejected.connect(self.reject)
 
-        # Fill combo from the central dictionary
+        # Appearance setup
         self.comboDiffStyles.clear()
-        self.comboDiffStyles.addItems(PALETTES.keys())
+        self.comboDiffStyles.addItems(list(PALETTES.keys()) + [tr("Custom")])
+
+        # Connect color buttons to switch to Custom mode
+        self.btnColorAdded.colorChanged.connect(self.setToCustom)
+        self.btnColorRemoved.colorChanged.connect(self.setToCustom)
+        self.btnColorModified.colorChanged.connect(self.setToCustom)
+        self.btnColorUnchanged.colorChanged.connect(self.setToCustom)
+
+        self.comboDiffStyles.currentTextChanged.connect(self.onStyleChanged)
 
         self.setValues()
 
-    def setValues(self):
-        current_style = setting(DIFFSTYLES) or "Standard"
-        if current_style in PALETTES:
-            self.comboDiffStyles.setCurrentText(current_style)
+        # Shrink window to fit content
+        self.adjustSize()
 
+    def setValues(self):
+        # Load General settings
+        self.txtKartPath.setText(setting(KARTPATH) or "")
         self.chkHelperMode.setChecked(setting(HELPERMODE))
         self.chkAutoCommit.setChecked(setting(AUTOCOMMIT))
-        self.txtKartPath.setText(setting(KARTPATH))
+
+        # Block signals to prevent "auto-switching" to Custom during load
+        self.comboDiffStyles.blockSignals(True)
+        self.btnColorAdded.blockSignals(True)
+        self.btnColorRemoved.blockSignals(True)
+        self.btnColorModified.blockSignals(True)
+        self.btnColorUnchanged.blockSignals(True)
+
+        # Load the saved style name
+        saved_style = setting(DIFFSTYLES) or "Standard"
+        self.comboDiffStyles.setCurrentText(saved_style)
+
+        # Use Palette defaults if not Custom, else use saved colors
+        if saved_style in PALETTES:
+            p = PALETTES[saved_style]
+            self.btnColorAdded.setColor(QColor(p["ADDED"]))
+            self.btnColorRemoved.setColor(QColor(p["REMOVED"]))
+            self.btnColorModified.setColor(QColor(p["MODIFIED"]))
+            self.btnColorUnchanged.setColor(QColor(p["UNCHANGED"]))
+        else:
+            # Custom mode: Load individual colors saved in QSettings
+            self.btnColorAdded.setColor(QColor(setting(CURRENT_COLOR_ADDED) or "#54c35f"))
+            self.btnColorRemoved.setColor(QColor(setting(CURRENT_COLOR_REMOVED) or "#e8718d"))
+            self.btnColorModified.setColor(QColor(setting(CURRENT_COLOR_MODIFIED) or "#ffbe64"))
+            self.btnColorUnchanged.setColor(QColor(setting(CURRENT_COLOR_UNCHANGED) or "#ffffff"))
+
+        # Unblock signals
+        self.comboDiffStyles.blockSignals(False)
+        self.btnColorAdded.blockSignals(False)
+        self.btnColorRemoved.blockSignals(False)
+        self.btnColorModified.blockSignals(False)
+        self.btnColorUnchanged.blockSignals(False)
+
+    def onStyleChanged(self, style_name):
+        # Update buttons colors only if a preset (not Custom) is selected
+        if style_name in PALETTES:
+            p = PALETTES[style_name]
+            # Block signals to avoid triggering setToCustom when applying a preset
+            self.btnColorAdded.blockSignals(True)
+            self.btnColorRemoved.blockSignals(True)
+            self.btnColorModified.blockSignals(True)
+            self.btnColorUnchanged.blockSignals(True)
+
+            self.btnColorAdded.setColor(QColor(p["ADDED"]))
+            self.btnColorRemoved.setColor(QColor(p["REMOVED"]))
+            self.btnColorModified.setColor(QColor(p["MODIFIED"]))
+            self.btnColorUnchanged.setColor(QColor(p["UNCHANGED"]))
+
+            self.btnColorAdded.blockSignals(False)
+            self.btnColorRemoved.blockSignals(False)
+            self.btnColorModified.blockSignals(False)
+            self.btnColorUnchanged.blockSignals(False)
+
+        self.adjustSize()
+
+    def setToCustom(self):
+        # Change combo to Custom if a color is manually modified
+        if self.comboDiffStyles.currentText() != tr("Custom"):
+            self.comboDiffStyles.setCurrentText(tr("Custom"))
 
     def browse(self, textbox):
         folder = QFileDialog.getExistingDirectory(iface.mainWindow(), tr("Select Folder"), "")
@@ -67,13 +135,11 @@ class SettingsDialog(BASE, WIDGET):
         setSetting(AUTOCOMMIT, self.chkAutoCommit.isChecked())
         setSetting(DIFFSTYLES, selected_style)
 
-        # Deploy colors from selected palette to current settings
-        if selected_style in PALETTES:
-            palette = PALETTES[selected_style]
-            setSetting(CURRENT_COLOR_ADDED, palette["ADDED"])
-            setSetting(CURRENT_COLOR_REMOVED, palette["REMOVED"])
-            setSetting(CURRENT_COLOR_MODIFIED, palette["MODIFIED"])
-            setSetting(CURRENT_COLOR_UNCHANGED, palette["UNCHANGED"])
+        # Save colors as hex strings
+        setSetting(CURRENT_COLOR_ADDED, self.btnColorAdded.color().name())
+        setSetting(CURRENT_COLOR_REMOVED, self.btnColorRemoved.color().name())
+        setSetting(CURRENT_COLOR_MODIFIED, self.btnColorModified.color().name())
+        setSetting(CURRENT_COLOR_UNCHANGED, self.btnColorUnchanged.color().name())
 
         self.accept()
 
@@ -85,17 +151,17 @@ class SettingsDialog(BASE, WIDGET):
         self.setWindowTitle(tr("Kart Settings"))
 
         # Kart Executable Section
-        self.groupBox.setTitle(tr("Kart executable"))
-        self.label_2.setText(tr("Path to Kart executable"))
+        self.grpKartExecution.setTitle(tr("Kart execution"))
+        self.lblPath.setText(tr("Path to Kart executable"))
         self.txtKartPath.setPlaceholderText(
             tr("[Leave empty to use default Kart installation path]")
         )
         self.chkHelperMode.setText(tr("Use helper mode"))
 
         # Auto Commit Section
-        self.groupBox_3.setTitle(tr("Auto commit"))
+        self.grpAutoCommit.setTitle(tr("Auto commit"))
         self.chkAutoCommit.setText(tr("Commit automatically after closing editing"))
 
         # Diff Styles Section
-        self.groupBox_2.setTitle(tr("Diff styles"))
-        self.label.setText(tr("Styles to use for geometry diffs"))
+        self.grpDiffStyles.setTitle(tr("Diff styles"))
+        self.lblStyleProfile.setText(tr("Styles to use for geometry diffs"))
