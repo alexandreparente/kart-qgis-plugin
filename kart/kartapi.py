@@ -13,7 +13,6 @@ from qgis.core import (
     Qgis,
     QgsCoordinateReferenceSystem,
     QgsDataSourceUri,
-    QgsMessageOutput,
     QgsProject,
     QgsRectangle,
     QgsReferencedRectangle,
@@ -28,6 +27,7 @@ from qgis.PyQt.QtWidgets import (
 from qgis.utils import iface
 
 from kart import logging
+from kart.gui.errordialog import KartErrorDialog
 from kart.gui.installationwarningdialog import InstallationWarningDialog
 from kart.gui.userconfigdialog import UserConfigDialog
 from kart.utils import HELPERMODE, KARTPATH, setSetting, setting, tr
@@ -51,35 +51,9 @@ def executeskart(f):
             if checkKartInstalled():
                 return f(*args)
         except KartException as ex:
-            dlg = QgsMessageOutput.createMessageOutput()
-            dlg.setTitle("Kart")
-            lines = str(ex).splitlines()
-            msglines = []
-            for line in lines:
-                # skip lines that refer to missing loads of shared libraries
-                if line.startswith("ERROR 1: Can't load") or ".dylib" in line:
-                    continue
-                if "The specified procedure could not be found" in line:
-                    continue
-                if line.strip():
-                    msglines.append(line)
-            errors = "<br>".join(msglines)
-            if "You have uncommitted changes" in errors:
-                html_template = "<p><b>{text}</b></p>"
-                msg = html_template.format(
-                    text=tr(
-                        "This operation requires a clean working tree. "
-                        "Commit or discard your working tree changes and then retry."
-                    )
-                )
-            else:
-                html_template = "<p><b>{text}</b></p><p style='color:red'>{errors}</p>"
-                msg = html_template.format(
-                    text=tr("Kart failed with the following message:"),
-                    errors=errors,
-                )
-            dlg.setMessage(msg, QgsMessageOutput.MessageType.MessageHtml)
-            dlg.showMessage()
+            # Handles Kart errors by displaying a friendly message in the QGIS
+            dlg = KartErrorDialog(str(ex))
+            dlg.exec()
 
     return inner
 
