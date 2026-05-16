@@ -19,7 +19,7 @@ from qgis.utils import iface
 
 from kart.gui import icons
 from kart.kartapi import executeskart
-from kart.utils import confirm, tr, waitcursor
+from kart.utils import confirm, tr
 
 
 class KartCommitPanel(QWidget):
@@ -29,6 +29,7 @@ class KartCommitPanel(QWidget):
         super().__init__(parent)
         self.repo = None
         self._last_repo_path = None
+        self._needs_refresh = False
 
         self.main_dock = parent
         while self.main_dock and not hasattr(self.main_dock, "showChanges"):
@@ -89,6 +90,13 @@ class KartCommitPanel(QWidget):
         input_layout.addWidget(self.btnCommit)
         layout.addLayout(input_layout)
 
+    def showEvent(self, event):
+        """Executes pending refresh when the widget becomes visible."""
+        super().showEvent(event)
+        if self._needs_refresh:
+            self._needs_refresh = False
+            self.refresh_list()
+
     def setRepository(self, repo):
         new_path = repo.path if repo else None
         if repo == self.repo and self._last_repo_path == new_path:
@@ -100,12 +108,10 @@ class KartCommitPanel(QWidget):
         if self.isVisible():
             self.refresh_list()
         else:
+            self._needs_refresh = True
             self.fileList.clear()
 
     def refresh_list(self):
-        if not self.isVisible():
-            return
-
         self.fileList.clear()
         self.btnCommit.setEnabled(False)
 
@@ -176,7 +182,6 @@ class KartCommitPanel(QWidget):
         elif self.main_dock:
             self.main_dock.showChanges()
 
-    @waitcursor
     @executeskart
     def do_commit(self, checked=False):
         if not self.repo:
